@@ -1,32 +1,109 @@
 pipeline {
     agent any
     
+    environment {
+        SCANNER_HOME = tool 'sonar-scanner'
+    }
+    
     tools {
-        maven 'maven3.6'
         jdk 'jdk17'
+        maven 'maven3'
     }
 
     stages {
+        stage('Git Checkout') {
+            steps {
+                git branch: 'main', credentialsId: 'git-cred', url: 'https://github.com/khalid8390/Boardgame.git'
+            }
+        }
         
         stage('Compile') {
             steps {
-             sh 'mvn compile'
+                sh "mvn compile"
             }
         }
-        stage('test') {
+        
+        stage('Test') {
             steps {
-                sh 'mvn test'
+                sh "mvn test"
             }
         }
-        stage('Package') {
+        
+        stage('File system scan') {
             steps {
-               sh 'mvn package'
+                sh "trivy fs --format table -o trivy-fs-report.html ."
             }
         }
-        stage('Hello') {
+        
+        stage('SonarQube Analysis') {
             steps {
-                echo 'Hello World'
+                withSonarQubeEnv('sonar') {
+                    sh '''$SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=BoardGame -Dsonar.projectKey=BoardGame \
+                            -Dsonar.java.binaries=. '''
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                script { 
+                    waitForQualityGate abortPipeline: false, credentialsId: 'sonar-token'  
+                }
+            }
+        }
+        
+        stage('Build') {
+            steps {
+                sh "mvn package"
+            }
+        }
+        
+        stage('Publish Artifacts to Nexus') {
+            steps {
+                withMaven(globalMavenSettingsConfig: 'global-settings', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true) {
+                    sh "mvn deploy"
+                }
+            }
+        }
+        
+        stage('Build and Tag Docker Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh "docker build -t khalid8390/boardgame:latest ."
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Image Scan') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh "trivy image --format table -o trivy-image-report.html khalid8390/boardgame:latest"
+                    }
+                }
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh "docker push khalid8390/boardgame:latest"
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes') {
+            steps {
+                withKubeConfig(caCertificate: '', clusterName: 'kubernetes', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://172.31.8.22:6443') {
+                    sh "kubectl apply -f deployment-service.yaml"    
+                    sh "kubectl get pods -n webapps"
+                }
             }
         }
     }
-}
+
+    
