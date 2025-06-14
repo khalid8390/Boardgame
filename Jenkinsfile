@@ -98,7 +98,7 @@ pipeline {
         
         stage('Deploy to Kubernetes') {
             steps {
-                withKubeConfig(caCertificate: '', clusterName: 'kubernetes', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://172.31.8.22:6443') {
+                withKubeConfig(caCertificate: '', clusterName: 'demo-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', restrictKubeConfigAccess: false, serverUrl: 'https://6788A54908E7250FCFD110FFDB2C0A1C.gr7.ap-south-1.eks.amazonaws.com') {
                     sh "kubectl apply -f deployment-service.yaml"    
                     sh "kubectl get pods -n webapps"
                 }
